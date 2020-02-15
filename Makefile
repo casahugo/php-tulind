@@ -139,4 +139,4 @@ install:
 clean:
 						${RM} ${EXTENSION} ${OBJECTS}
 
-reload: clean all install
+build: clean all install

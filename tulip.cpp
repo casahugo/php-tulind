@@ -1,102 +1,151 @@
 #include "indicators.h"
-#include <iostream>
 #include <phpcpp.h>
-#include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <assert.h>
+#include <ctype.h>
+#include <math.h>
+#include <iostream>
 
 /**
  *  Namespace to use
  */
 using namespace std;
 
-void print_array(const double *p, const int size) {
-    int i;
-    for (i = 0; i < size; ++i) {
-        if (i) printf(", ");
-        printf("%.1f", p[i]);
-    }
-    printf("\n");
-}
-
 /**
- *  tulip()
- */
-void tulip()
-{
-//    const double data_in[] = {5,8,12,11,9,8,7,10,11,13};
-//    const int input_length = sizeof(data_in) / sizeof(double);
-//
-//    printf("We have %d bars of input data.\n", input_length);
-//    print_array(data_in, input_length);
-//
-//    const double options[] = {3};
-//    printf("Our option array is: ");
-//    print_array(options, sizeof(options) / sizeof(double));
-//
-//    const int start = ti_sma_start(options);
-//    printf("The start amount is: %d\n", start);
-//
-//    const int output_length = input_length - start;
-//    double *data_out = (double *) malloc((unsigned int)output_length * sizeof(double));
-//    assert(data_out != 0);
-//    printf("The output length is: %d\n", output_length);
-//
-//    const double *all_inputs[] = {data_in};
-//    double *all_outputs[] = {data_out};
-//    int error = ti_sma(input_length, all_inputs, options, all_outputs);
-//    assert(error == TI_OKAY);
-//
-//
-//    printf("The output data is: ");
-//    print_array(data_out, output_length);
+* Tulipe indicators class 
+*/
+class Tulind : public Php::Base
+{  
+private:
+    std::map<std::string, Php::Value> _indicators;  
+
+public:
+    /**
+     *  C++ constructor and destructor
+     */
+    Tulind() = default;
+    virtual ~Tulind() = default;
+
+    /**
+     *  php "constructor"
+     */
+    void __construct()
+    {
+        const ti_indicator_info *info = ti_indicators;
+
+        while (info->name != 0) {   
+            Php::Value indicator;
+
+            indicator["name"] = info->name;
+            indicator["full_name"] = info->full_name;
+
+            char const *type = "unknown";
+
+            switch (info->type) {
+                case TI_TYPE_OVERLAY:
+                    type = "overlay";
+                    break;
+                case TI_TYPE_INDICATOR:
+                    type = "indicator";
+                    break;
+                case TI_TYPE_MATH:
+                    type = "math";
+                    break;
+                case TI_TYPE_SIMPLE:
+                    type = "simple";
+                    break;
+                case TI_TYPE_COMPARATIVE:
+                    type = "comparative";
+                    break;
+            }
+
+            indicator["type"] = type;
+
+            Php::Array inputs;
+            Php::Array options;
+            Php::Array outputs;
+
+            int i;
+            for (i = 0; i < info->inputs; ++i)
+                inputs[i] = info->input_names[i];         
+
+            for (i = 0; i < info->options; ++i)
+                options[i] = info->option_names[i];       
+
+            for (i = 0; i < info->outputs; ++i)
+                outputs[i] = info->output_names[i];
 
 
-    printf("This program is an example of looping through\n");
-    printf("each of the available indicators.\n\n");
+            indicator["inputs"] = inputs;
+            indicator["options"] = options;
+            indicator["outputs"] = outputs;
 
-    /* Set info to first indicators in array. */
-    const ti_indicator_info *info = ti_indicators;
-
-    /* The last item is all zeros, so we'll stop when we get there. */
-    while (info->name != 0) {
-        int i;
-
-        printf("%s (%s) has type %d with: %d inputs, %d options, %d outputs.\n",
-                info->name,
-                info->full_name,
-                info->type,
-                info->inputs,
-                info->options,
-                info->outputs
-              );
-
-
-        printf("   inputs: ");
-        for (i = 0; i < info->inputs; ++i)
-            printf("%s%s", i ? ", " : "", info->input_names[i]);
-        printf("\n");
-
-        printf("   options: ");
-        for (i = 0; i < info->options; ++i)
-            printf("%s%s", i ? ", " : "", info->option_names[i]);
-        printf("\n");
-
-        printf("   outputs: ");
-        for (i = 0; i < info->outputs; ++i)
-            printf("%s%s", i ? ", " : "", info->output_names[i]);
-        printf("\n");
-
-
-        /* To use this indicator, call the start function like:
-         * info->start(options);
-         * and then call the actual indicator function like:
-         * info->indicator(size, inputs, options, outputs);
-         */
-        printf("\n");
-
-        ++info; /* Next indicator. */
+             _indicators[info->name] = indicator;
+            
+            ++info;
+        }
     }
-}
+
+    /**
+     *  Return the version
+     *  @return     string
+     */
+    Php::Value version() { return ti_version(); }
+
+    /**
+     *  Get indicators list
+     *  @return     array
+     */
+    Php::Value indicators() { return _indicators; }
+
+    Php::Value __call(const char *name, Php::Parameters &parameters)
+    {
+        const ti_indicator_info *info = ti_find_indicator(name);
+
+        if (info == 0) {
+            throw Php::Exception("Method not found");
+        }
+
+        if (!Php::is_array(parameters[0]) ) {
+            throw Php::Exception("Expecting first argument to be array of inputs.");
+        }
+
+        if (!Php::is_array(parameters[1]) ) {
+            throw Php::Exception("Expecting first argument to be array of options.");
+        }
+
+        double data_in[parameters[0].size()];
+        for (int i = 0; i < parameters[0].size(); i++) {
+            data_in[i] = parameters[0][i];
+        }
+
+        const int input_length = sizeof(data_in) / sizeof(double);
+
+        double options[parameters[1].size()];
+        for (int i = 0; i < parameters[1].size(); i++) {
+            options[i] = parameters[1][i];
+        }
+
+        const int start = info->start(options);
+        const int output_length = input_length - start;
+        double *data_out = (double *) malloc((unsigned int)output_length * sizeof(double));
+        assert(data_out != 0);
+
+        const double *all_inputs[] = {data_in};
+        double *all_outputs[] = {data_out};
+        int error = info->indicator(input_length, all_inputs, options, all_outputs);
+        assert(error == TI_OKAY);
+
+        Php::Array out;
+        for(int i = 0; i < output_length; i++) {
+            out[i] = data_out[i];
+        }
+        
+        return out;        
+    }
+};
 
 
 /**
@@ -116,12 +165,16 @@ extern "C" {
         // for the entire duration of the process (that's why it's static)
         static Php::Extension extension("tulip", "1.0");
 
-        // @todo    add your own functions, classes, namespaces to the extension
-        // add function to extension
-        extension.add<tulip>("tulip");
+         // description of the class so that PHP knows which methods are accessible
+        Php::Class<Tulind> tulind("Tulind");
+        tulind.method<&Tulind::__construct> ("__construct");
+        tulind.method<&Tulind::version> ("version");
+        tulind.method<&Tulind::indicators> ("indicators");
 
+        // add the class to the extension
+        extension.add(std::move(tulind));
 
         // return the extension
-        return extension.module();
+        return extension;
     }
 }

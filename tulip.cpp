@@ -6,7 +6,28 @@
 #include <assert.h>
 #include <ctype.h>
 #include <math.h>
-#include <iostream>
+
+void print_array(const double *p, const int size) {
+    int i;
+    for (i = 0; i < size; ++i) {
+        if (i) printf(", ");
+        printf("%.1f", p[i]);
+    }
+    printf("\n");
+}
+
+static double *getArray(Php::Value parameter, const int size, int offset) {
+    Php::Value inputs = parameter[offset];
+    double *input = (double*)malloc(sizeof(double) * size);
+
+    for (int i = 0; i < inputs.size(); i++) {
+        double value = inputs[i];
+        input[i] = value;
+    }
+    return input;
+}
+
+
 
 /**
  *  Namespace to use
@@ -116,35 +137,92 @@ public:
             throw Php::Exception("Expecting first argument to be array of options.");
         }
 
-        double data_in[parameters[0].size()];
-        for (int i = 0; i < parameters[0].size(); i++) {
-            data_in[i] = parameters[0][i];
+        int size = 0;
+        {
+            for (int i = 0; i < parameters[0].size(); i++) {
+                Php::Value inputs = parameters[0][i];
+                if (inputs.size() < size || size == 0) {
+                    size = inputs.size();
+                }
+            }
         }
 
-        const int input_length = sizeof(data_in) / sizeof(double);
+        TI_REAL out[5][size];
+        TI_REAL const *inputs[] = {0, 0, 0, 0, 0};
+        TI_REAL *outputs[] = {out[0], out[1], out[2], out[3], out[4]};
 
-        double options[parameters[1].size()];
-        for (int i = 0; i < parameters[1].size(); i++) {
-            options[i] = parameters[1][i];
+        int r=0;
+
+        /* Setup the inputs. */
+        int j;
+        for (j = 0; j < info->inputs; ++j) {
+            if (strcmp(info->input_names[j], "open") == 0) {
+                inputs[j] = getArray(parameters[0], size, j);
+            } else if (strcmp(info->input_names[j], "high") == 0) {
+                inputs[j] = getArray(parameters[0], size, j);
+            } else if (strcmp(info->input_names[j], "low") == 0) {
+                inputs[j] = getArray(parameters[0], size, j);
+            } else if (strcmp(info->input_names[j], "close") == 0) {
+                inputs[j] = getArray(parameters[0], size, j);
+            } else if (strcmp(info->input_names[j], "volume") == 0) {
+                inputs[j] = getArray(parameters[0], size, j);
+            } else if (strcmp(info->input_names[j], "real") == 0) {
+                if (!r) {
+                    inputs[j] = getArray(parameters[0], size, j); r = 1;
+                } else {
+                    inputs[j] = getArray(parameters[0], size, j);
+                }
+            } else {
+                return 0;
+            };
         }
 
-        const int start = info->start(options);
-        const int output_length = input_length - start;
-        double *data_out = (double *) malloc((unsigned int)output_length * sizeof(double));
-        assert(data_out != 0);
+        /* See if we need alternative inputs (for the indicators that can't take large numbers. */
+        const char *alts[] = {"acos", "asin", "atan", "cosh", "sinh", "tanh", "todeg", 0};
+        {
+            const char **alt = alts;
+            while (*alt) {
+                if (strcmp(*alt, info->name) == 0) {
+                    r=0;
+                    for (j = 0; j < info->inputs; ++j)
+                        inputs[j] = getArray(parameters[0], size, j);
 
-        const double *all_inputs[] = {data_in};
-        double *all_outputs[] = {data_out};
-        int error = info->indicator(input_length, all_inputs, options, all_outputs);
-        assert(error == TI_OKAY);
-
-        Php::Array out;
-        for(int i = 0; i < output_length; i++) {
-            out[i] = data_out[i];
+                    break;
+                }
+                ++alt;
+            }
         }
-        
-        return out;        
+
+        /* Set options, save offset. */
+        TI_REAL options[10];
+        {
+            int i;
+            for (i = 0; i < info->options; ++i) {
+                options[i] = parameters[1][i];
+            }
+        }
+
+        int start = info->start(options);
+
+        /* Run it. */
+        const int ret = info->indicator(size, inputs, options, outputs);
+
+        Php::Value output;
+        if (ret == TI_OKAY) {
+            for (int k = 0; k < info->outputs; ++k) {
+                Php::Value value;
+                for (int i = 0; i < size; ++i) {
+                    if (i >= start) {
+                        value[i] = out[k][i - start];
+                    }
+                }
+
+                output[k] = value;
+            }
+        }
+        return output;
     }
+
 };
 
 

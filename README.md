@@ -3,7 +3,7 @@ Tulind bindings
 
 # Install
 ```bash
-git clone git@github.com:anthHugo/php-tulind.git
+git clone git@github.com:casahugo/php-tulind.git
 cd php-tulind/
 sudo make install
 ```
